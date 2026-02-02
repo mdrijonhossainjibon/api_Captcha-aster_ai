@@ -1,0 +1,142 @@
+import io, base64, torch
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from PIL import Image
+import clip
+import numpy as np
+
+app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
+
+# Determine device (GPU if available for faster inference)
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"Using device: {device}")
+
+# Load CLIP model (better for cartoon/rendered images)
+print("Loading CLIP model...")
+model, preprocess = clip.load("ViT-B/32", device=device)
+print("CLIP model loaded successfully!")
+
+# Comprehensive list of objects to detect (expanded from COCO)
+OBJECT_CLASSES = [
+    'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus',
+    'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'stop sign',
+    'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
+    'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella',
+    'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball',
+    'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket',
+    'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl',
+    'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza',
+    'donut', 'cake', 'chair', 'couch', 'potted plant', 'bed', 'dining table',
+    'toilet', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone',
+    'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'book',
+    'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush',
+    # Additional objects for better cartoon/rendered image detection
+    'pig', 'frog', 'duck', 'goose', 'monkey', 'rabbit', 'fox', 'lion', 'tiger',
+    'panda', 'koala', 'penguin', 'owl', 'parrot', 'turtle', 'fish', 'dolphin',
+    'ball', 'toy', 'robot', 'dragon', 'dinosaur', 'castle', 'tree', 'flower',
+    'mushroom', 'star', 'moon', 'sun', 'cloud', 'rainbow', 'building', 'house',
+    'piano', 'guitar', 'drum', 'musical instrument', 'game controller', 'tablet','camera','a hedgehog'
+]
+
+# Create text prompts for CLIP
+text_prompts = [f"a photo of a {obj}" for obj in OBJECT_CLASSES]
+text_tokens = clip.tokenize(text_prompts).to(device)
+
+# Pre-compute text features for efficiency
+with torch.no_grad():
+    text_features = model.encode_text(text_tokens)
+    text_features /= text_features.norm(dim=-1, keepdim=True)
+
+@app.route('/classify', methods=['POST'])
+def classify_image():
+    try:
+        data = request.get_json()
+        
+        # Validate input
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        if 'image' not in data:
+            return jsonify({'error': 'Missing "image" field in request'}), 400
+        
+        image_str = data['image']
+        
+        if not image_str:
+            return jsonify({'error': 'Empty image data'}), 400
+        
+        # Remove data URL prefix if present
+        if image_str.startswith('data:'):
+            image_str = image_str.split(',', 1)[1]
+        
+        # Decode base64 image
+        try:
+            image_data = base64.b64decode(image_str)
+        except Exception as e:
+            return jsonify({'error': f'Invalid base64 encoding: {str(e)}'}), 400
+        
+        # Open and process image
+        try:
+            image = Image.open(io.BytesIO(image_data)).convert('RGB')
+        except Exception as e:
+            return jsonify({'error': f'Invalid image data: {str(e)}'}), 400
+        
+        width, height = image.size
+        
+        # Dictionary to store the best object for each grid cell (0-8)
+        grid_results = {i: None for i in range(9)}
+        
+        # Process each grid cell (3x3 grid)
+        cell_width = width / 3
+        cell_height = height / 3
+        
+        for row in range(3):
+            for col in range(3):
+                grid_index = row * 3 + col
+                
+                # Extract the cell from the image
+                left = int(col * cell_width)
+                top = int(row * cell_height)
+                right = int((col + 1) * cell_width)
+                bottom = int((row + 1) * cell_height)
+                
+                cell_image = image.crop((left, top, right, bottom))
+                
+                # Preprocess the cell image for CLIP
+                cell_tensor = preprocess(cell_image).unsqueeze(0).to(device)
+                
+                # Get image features
+                with torch.no_grad():
+                    image_features = model.encode_image(cell_tensor)
+                    image_features /= image_features.norm(dim=-1, keepdim=True)
+                    
+                    # Calculate similarity with all object classes
+                    similarity = (100.0 * image_features @ text_features.T).softmax(dim=-1)
+                    
+                    # Get top prediction
+                    values, indices = similarity[0].topk(1)
+                    confidence = values[0].item()
+                    predicted_class = OBJECT_CLASSES[indices[0].item()]
+                    
+                    # Only include if confidence is above threshold
+                    if confidence > 0.15:  # Lower threshold for CLIP (it's more conservative)
+                        grid_results[grid_index] = {
+                            'grid_position': grid_index,
+                            'object_name': predicted_class,
+                            'confidence': round(confidence, 2),
+                            'bbox': [left, top, right, bottom]
+                        }
+        
+        # Convert dictionary to a sorted list for the response
+        final_output = [grid_results[i] for i in range(9) if grid_results[i] is not None]
+
+        return jsonify({
+            'detected_objects': final_output,
+            'total_cells_occupied': len(final_output)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
