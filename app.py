@@ -20,7 +20,7 @@ OBJECT_CLASSES = [
     "cow", "lion", "tiger", "zebra", "elephant", "giraffe", "monkey", "gorilla", "panda", "bear", 
     "polar bear", "koala", "kangaroo", "llama", "hippo", "rhino", "camel", "deer", "fox", "wolf", 
     "dog", "cat", "rabbit", "hamster", "mouse", "rat", "pig", "sheep", "goat", "horse", "donkey","hedgehog","mouse","goose",
-    "hippopotamus",
+    "hippopotamus","squirrel"
     
     # --- ANIMALS (Birds/Reptiles/Insects) ---
     "bird", "owl", "duck", "chicken", "chick", "penguin", "parrot", "eagle", "swan", "flamingo",
