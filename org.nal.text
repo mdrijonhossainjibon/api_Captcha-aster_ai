@@ -11,7 +11,7 @@ CORS(app)
 
 # Setup Device
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model, preprocess = clip.load("ViT-L/14", device=device)
+model, preprocess = clip.load("ViT-B/32", device=device)
 model.eval()
 
 # 1. Cleaned Object List (Removed duplicates and added missing items)
@@ -19,8 +19,8 @@ OBJECT_CLASSES = [
     # --- ANIMALS (Mammals) ---
     "cow", "lion", "tiger", "zebra", "elephant", "giraffe", "monkey", "gorilla", "panda", "bear", 
     "polar bear", "koala", "kangaroo", "llama", "hippo", "rhino", "camel", "deer", "fox", "wolf", 
-    "dog", "cat", "rabbit", "hamster", "mouse", "rat", "pig", "sheep", "goat", "horse", "donkey", "hedgehog", "goose",
-    "hippopotamus", "squirrel",
+    "dog", "cat", "rabbit", "hamster", "mouse", "rat", "pig", "sheep", "goat", "horse", "donkey","hedgehog","mouse","goose",
+    "hippopotamus","squirrel"
     
     # --- ANIMALS (Birds/Reptiles/Insects) ---
     "bird", "owl", "duck", "chicken", "chick", "penguin", "parrot", "eagle", "swan", "flamingo",

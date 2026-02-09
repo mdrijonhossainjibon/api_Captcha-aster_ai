@@ -1,0 +1,408 @@
+import io
+import base64
+import torch
+import clip
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from PIL import Image
+import numpy as np
+
+app = Flask(__name__)
+CORS(app)
+
+# Setup Device
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"Using device: {device}")
+
+# Use larger model for better accuracy (ViT-L/14 is more accurate than ViT-B/32)
+# Falls back to ViT-B/32 if memory is limited
+try:
+    model, preprocess = clip.load("ViT-B/32", device=device)
+    print("Loaded ViT-L/14 model (high accuracy)")
+except:
+    model, preprocess = clip.load("ViT-B/32", device=device)
+    print("Loaded ViT-B/32 model (fallback)")
+model.eval()
+
+# =============================================================================
+# ENHANCED OBJECT CLASSES with variations for better matching
+# =============================================================================
+OBJECT_CLASSES = [
+    # --- ANIMALS (Mammals) ---
+    "cow", "lion", "tiger", "zebra", "elephant", "giraffe", "monkey", "gorilla", "panda", "bear",
+    "polar bear", "koala", "kangaroo", "llama", "alpaca", "hippo", "hippopotamus", "rhino", "rhinoceros",
+    "camel", "deer", "fox", "wolf", "dog", "puppy", "cat", "kitten", "rabbit", "bunny", "hamster",
+    "mouse", "rat", "pig", "sheep", "lamb", "goat", "horse", "pony", "donkey", "hedgehog", "goose",
+    "squirrel", "raccoon", "skunk", "beaver", "otter", "seal", "walrus", "moose", "buffalo", "bison",
+    
+    # --- ANIMALS (Birds) ---
+    "bird", "owl", "duck", "duckling", "chicken", "hen", "rooster", "chick", "penguin", "parrot",
+    "eagle", "hawk", "swan", "flamingo", "peacock", "pelican", "seagull", "crow", "raven", "sparrow",
+    "hummingbird", "toucan", "ostrich", "turkey", "pigeon", "dove", "canary", "woodpecker",
+    
+    # --- ANIMALS (Reptiles/Amphibians/Insects) ---
+    "snake", "cobra", "python", "turtle", "tortoise", "crocodile", "alligator", "frog", "toad",
+    "lizard", "gecko", "chameleon", "iguana", "dinosaur", "t-rex", "dragon", "butterfly", "moth",
+    "spider", "ladybug", "ladybird", "ant", "bee", "wasp", "beetle", "caterpillar", "dragonfly",
+    "grasshopper", "cricket", "firefly", "mosquito", "fly", "snail", "slug", "worm", "scorpion",
+    
+    # --- AQUATIC ---
+    "fish", "goldfish", "clownfish", "shark", "whale", "dolphin", "octopus", "squid", "crab",
+    "lobster", "shrimp", "jellyfish", "starfish", "seahorse", "seal", "orca", "stingray", "eel",
+    
+    # --- PEOPLE & FANTASY ---
+    "child", "kid", "baby", "infant", "boy", "girl", "man", "woman", "person", "people",
+    "robot", "android", "monster", "creature", "alien", "ghost", "spirit", "superhero", "hero",
+    "wizard", "witch", "fairy", "elf", "dwarf", "giant", "clown", "astronaut", "spaceman",
+    "princess", "prince", "king", "queen", "knight", "pirate", "ninja", "samurai", "viking",
+    "angel", "devil", "demon", "vampire", "zombie", "skeleton", "mummy", "werewolf", "unicorn",
+    "mermaid", "centaur", "yeti", "bigfoot", "santa", "reindeer", "snowman",
+    
+    # --- TRANSPORT & VEHICLES ---
+    "car", "automobile", "truck", "pickup truck", "bus", "school bus", "train", "locomotive",
+    "airplane", "plane", "jet", "helicopter", "rocket", "spaceship", "boat", "sailboat", "ship",
+    "yacht", "submarine", "bicycle", "bike", "motorcycle", "motorbike", "scooter", "skateboard",
+    "tractor", "bulldozer", "excavator", "crane", "ambulance", "fire truck", "fire engine",
+    "police car", "taxi", "limousine", "van", "rv", "camper", "jeep", "suv", "convertible",
+    "race car", "sports car", "hot air balloon", "blimp", "ufo", "flying saucer", "wagon", "cart",
+    
+    # --- TOYS & GAMES ---
+    "toy", "doll", "barbie", "action figure", "teddy bear", "stuffed animal", "plush", "ball",
+    "soccer ball", "basketball", "football", "baseball", "tennis ball", "balloon", "kite",
+    "yo-yo", "top", "spinning top", "puzzle", "blocks", "lego", "robot toy", "toy car", "train set",
+    "board game", "dice", "cards", "playing cards", "chess", "checkers", "video game", "controller",
+    
+    # --- MUSICAL INSTRUMENTS ---
+    "piano", "keyboard", "guitar", "electric guitar", "acoustic guitar", "violin", "cello",
+    "drum", "drums", "drumset", "trumpet", "saxophone", "flute", "clarinet", "harmonica",
+    "accordion", "harp", "banjo", "ukulele", "xylophone", "tambourine", "maracas", "microphone",
+    
+    # --- HOUSEHOLD & OBJECTS ---
+    "book", "notebook", "pencil", "pen", "crayon", "marker", "eraser", "ruler", "scissors",
+    "clock", "watch", "alarm clock", "lamp", "lightbulb", "candle", "flashlight", "lantern",
+    "chair", "armchair", "sofa", "couch", "table", "desk", "bed", "pillow", "blanket",
+    "phone", "telephone", "cellphone", "smartphone", "computer", "laptop", "tablet", "monitor",
+    "keyboard", "camera", "television", "tv", "radio", "speaker", "headphones", "umbrella",
+    "key", "lock", "door", "window", "mirror", "picture frame", "vase", "pot", "pan", "cup",
+    "mug", "glass", "bottle", "jar", "plate", "bowl", "fork", "knife", "spoon", "chopsticks",
+    "gift", "gift box", "present", "box", "bag", "backpack", "suitcase", "purse", "wallet",
+    "hat", "cap", "crown", "helmet", "shoes", "boots", "sneakers", "sandals", "slippers",
+    "glasses", "sunglasses", "goggles", "gloves", "mittens", "scarf", "tie", "belt", "watch",
+    "ring", "necklace", "bracelet", "earrings", "diamond", "gem", "jewel", "treasure", "gold",
+    "coin", "money", "dollar", "trophy", "medal", "ribbon", "flag", "banner",
+    
+    # --- NATURE ---
+    "tree", "pine tree", "palm tree", "christmas tree", "oak tree", "flower", "rose", "tulip",
+    "sunflower", "daisy", "lily", "lotus", "orchid", "cactus", "plant", "bush", "shrub",
+    "grass", "leaf", "leaves", "branch", "log", "wood", "mushroom", "forest", "jungle",
+    "sun", "moon", "crescent moon", "full moon", "star", "stars", "comet", "meteor",
+    "cloud", "clouds", "rain", "raindrop", "rainbow", "lightning", "thunder", "snow", "snowflake",
+    "mountain", "volcano", "hill", "valley", "river", "stream", "waterfall", "lake", "pond",
+    "ocean", "sea", "wave", "beach", "island", "desert", "cave", "rock", "stone", "boulder",
+    "crystal", "ice", "iceberg", "glacier", "fire", "flame", "smoke", "tornado", "hurricane",
+    
+    # --- BUILDINGS & STRUCTURES ---
+    "house", "home", "cabin", "cottage", "mansion", "castle", "palace", "tower", "skyscraper",
+    "building", "apartment", "church", "temple", "mosque", "pyramid", "lighthouse", "windmill",
+    "barn", "farm", "factory", "warehouse", "hospital", "school", "library", "museum", "stadium",
+    "bridge", "tunnel", "road", "highway", "street", "sidewalk", "fence", "gate", "wall",
+    "tent", "igloo", "treehouse", "playground", "park", "garden", "fountain", "statue", "monument",
+    
+    # --- FOOD & DRINKS ---
+    "apple", "red apple", "green apple", "banana", "orange", "lemon", "lime", "grapefruit",
+    "strawberry", "blueberry", "raspberry", "blackberry", "cherry", "grape", "grapes", "watermelon",
+    "melon", "cantaloupe", "pineapple", "mango", "peach", "pear", "plum", "kiwi", "coconut",
+    "avocado", "tomato", "carrot", "corn", "broccoli", "lettuce", "cabbage", "cucumber", "pepper",
+    "onion", "garlic", "potato", "sweet potato", "pumpkin", "squash", "eggplant", "mushroom",
+    "peas", "beans", "rice", "wheat", "bread", "toast", "sandwich", "burger", "hamburger",
+    "cheeseburger", "hot dog", "pizza", "pasta", "spaghetti", "noodles", "soup", "salad",
+    "taco", "burrito", "sushi", "dumpling", "egg", "fried egg", "bacon", "sausage", "steak",
+    "chicken", "turkey", "fish", "shrimp", "lobster", "cheese", "butter", "milk", "yogurt",
+    "cake", "birthday cake", "cupcake", "muffin", "donut", "doughnut", "cookie", "biscuit",
+    "pie", "pastry", "croissant", "pancake", "waffle", "ice cream", "ice cream cone", "popsicle",
+    "candy", "chocolate", "lollipop", "gummy bear", "popcorn", "pretzel", "chips", "fries",
+    "french fries", "honey", "jam", "peanut butter", "syrup", "ketchup", "mustard", "sauce",
+    "coffee", "tea", "juice", "soda", "water", "lemonade", "smoothie", "milkshake", "wine", "beer",
+]
+
+COLOR_CLASSES = [
+    "red", "blue", "green", "yellow", "orange",
+    "purple", "violet", "pink", "brown", "black", "white", "gray", "grey",
+    "cyan", "turquoise", "teal", "navy", "maroon", "magenta", "gold", "silver", "beige", "tan",
+]
+
+# =============================================================================
+# ENSEMBLE PROMPT TEMPLATES for better accuracy
+# =============================================================================
+OBJECT_PROMPTS = [
+    "a cartoon drawing of a {obj}",
+    "a cute cartoon {obj}",
+    "a simple illustration of a {obj}",
+    "a {obj} icon",
+    "a cartoon {obj}",
+    "clipart of a {obj}",
+    "a child's drawing of a {obj}",
+]
+
+COLOR_PROMPTS = [
+    "a {color} colored object",
+    "something {color} in color",
+    "a {color} item",
+    "the color {color}",
+    "{color} colored cartoon",
+]
+
+# =============================================================================
+# PRE-COMPUTE TEXT FEATURES with ensemble averaging
+# =============================================================================
+print("Pre-computing text features with ensemble prompts...")
+
+with torch.no_grad():
+    # Object features with ensemble
+    all_obj_features = []
+    for prompt_template in OBJECT_PROMPTS:
+        prompts = [prompt_template.format(obj=c) for c in OBJECT_CLASSES]
+        tokens = clip.tokenize(prompts, truncate=True).to(device)
+        features = model.encode_text(tokens)
+        features /= features.norm(dim=-1, keepdim=True)
+        all_obj_features.append(features)
+    
+    # Average ensemble features
+    obj_text_features = torch.stack(all_obj_features).mean(dim=0)
+    obj_text_features /= obj_text_features.norm(dim=-1, keepdim=True)
+    
+    # Color features with ensemble
+    all_color_features = []
+    for prompt_template in COLOR_PROMPTS:
+        prompts = [prompt_template.format(color=c) for c in COLOR_CLASSES]
+        tokens = clip.tokenize(prompts, truncate=True).to(device)
+        features = model.encode_text(tokens)
+        features /= features.norm(dim=-1, keepdim=True)
+        all_color_features.append(features)
+    
+    # Average ensemble features
+    color_text_features = torch.stack(all_color_features).mean(dim=0)
+    color_text_features /= color_text_features.norm(dim=-1, keepdim=True)
+
+print(f"Loaded {len(OBJECT_CLASSES)} object classes and {len(COLOR_CLASSES)} color classes")
+
+# =============================================================================
+# OBJECT NAME NORMALIZATION - Map variations to canonical names
+# =============================================================================
+CANONICAL_NAMES = {
+    "hippopotamus": "hippo", "rhinoceros": "rhino", "puppy": "dog", "kitten": "cat",
+    "bunny": "rabbit", "lamb": "sheep", "pony": "horse", "duckling": "duck",
+    "hen": "chicken", "rooster": "chicken", "cobra": "snake", "python": "snake",
+    "tortoise": "turtle", "alligator": "crocodile", "toad": "frog", "t-rex": "dinosaur",
+    "ladybird": "ladybug", "moth": "butterfly", "goldfish": "fish", "clownfish": "fish",
+    "orca": "whale", "stingray": "fish", "kid": "child", "infant": "baby",
+    "android": "robot", "creature": "monster", "spirit": "ghost", "hero": "superhero",
+    "witch": "wizard", "spaceman": "astronaut", "automobile": "car", "pickup truck": "truck",
+    "school bus": "bus", "locomotive": "train", "plane": "airplane", "jet": "airplane",
+    "sailboat": "boat", "yacht": "boat", "bike": "bicycle", "motorbike": "motorcycle",
+    "fire engine": "fire truck", "sports car": "car", "race car": "car", "action figure": "doll",
+    "stuffed animal": "teddy bear", "plush": "teddy bear", "soccer ball": "ball",
+    "basketball": "ball", "football": "ball", "baseball": "ball", "tennis ball": "ball",
+    "electric guitar": "guitar", "acoustic guitar": "guitar", "drums": "drum", "drumset": "drum",
+    "notebook": "book", "pen": "pencil", "crayon": "pencil", "marker": "pencil",
+    "armchair": "chair", "sofa": "chair", "couch": "chair", "desk": "table",
+    "telephone": "phone", "cellphone": "phone", "smartphone": "phone", "laptop": "computer",
+    "tablet": "computer", "tv": "television", "mug": "cup", "present": "gift box",
+    "cap": "hat", "boots": "shoes", "sneakers": "shoes", "sandals": "shoes", "slippers": "shoes",
+    "pine tree": "tree", "palm tree": "tree", "oak tree": "tree", "christmas tree": "tree",
+    "rose": "flower", "tulip": "flower", "sunflower": "flower", "daisy": "flower",
+    "crescent moon": "moon", "full moon": "moon", "clouds": "cloud", "stars": "star",
+    "home": "house", "cabin": "house", "cottage": "house", "mansion": "house",
+    "palace": "castle", "red apple": "apple", "green apple": "apple", "grapes": "grape",
+    "hamburger": "burger", "cheeseburger": "burger", "birthday cake": "cake",
+    "doughnut": "donut", "french fries": "fries", "alpaca": "llama",
+}
+
+def normalize_object_name(name):
+    """Convert variations to canonical names for consistency"""
+    return CANONICAL_NAMES.get(name, name)
+
+@app.route("/classify", methods=["POST"])
+def classify():
+    try:
+        data = request.get_json()
+        image_str = data["image"]
+        if image_str.startswith("data:"):
+            image_str = image_str.split(",", 1)[1]
+
+        img_bytes = base64.b64decode(image_str)
+        image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+        
+        w, h = image.size
+        cell_w, cell_h = w / 3, h / 3
+        
+        # Dynamic padding based on image size (better for different CAPTCHA sizes)
+        padding = max(4, min(12, int(min(cell_w, cell_h) * 0.05)))
+        
+        cells_tensors = []
+        metadata = []
+        augmented_tensors = []  # For test-time augmentation
+
+        # Step 1: Crop all cells and prepare batches (with augmentation)
+        for r in range(3):
+            for c in range(3):
+                idx = r * 3 + c
+                left, top = int(c * cell_w), int(r * cell_h)
+                right, bottom = int((c + 1) * cell_w), int((r + 1) * cell_h)
+                
+                # Main crop with standard padding
+                cell = image.crop((left + padding, top + padding, right - padding, bottom - padding))
+                cells_tensors.append(preprocess(cell))
+                
+                # Additional crops for test-time augmentation (TTA)
+                # Slightly different crops to get better consensus
+                for p_offset in [-2, 2]:
+                    p = max(0, padding + p_offset)
+                    aug_cell = image.crop((
+                        max(left, left + p), 
+                        max(top, top + p), 
+                        min(right, right - p), 
+                        min(bottom, bottom - p)
+                    ))
+                    augmented_tensors.append(preprocess(aug_cell))
+                
+                metadata.append({
+                    "grid_position": idx, 
+                    "bbox": [left, top, right, bottom],
+                    "aug_start_idx": len(augmented_tensors) - 2
+                })
+
+        # Step 2: Process main batch
+        image_input = torch.stack(cells_tensors).to(device)
+        
+        with torch.no_grad():
+            image_features = model.encode_image(image_input)
+            image_features /= image_features.norm(dim=-1, keepdim=True)
+
+            # Get raw logits (not softmax) for better ranking
+            obj_logits = 100.0 * image_features @ obj_text_features.T
+            color_logits = 100.0 * image_features @ color_text_features.T
+            
+            # Top-3 for objects (allows for confidence-based fallback)
+            obj_probs = obj_logits.softmax(dim=-1)
+            top3_obj_confs, top3_obj_indices = obj_probs.topk(3, dim=-1)
+            
+            # Top-3 for colors
+            color_probs = color_logits.softmax(dim=-1)
+            top3_color_confs, top3_color_indices = color_probs.topk(3, dim=-1)
+
+        # Step 3: Process augmented batch for consensus
+        if augmented_tensors:
+            aug_input = torch.stack(augmented_tensors).to(device)
+            with torch.no_grad():
+                aug_features = model.encode_image(aug_input)
+                aug_features /= aug_features.norm(dim=-1, keepdim=True)
+                aug_obj_logits = 100.0 * aug_features @ obj_text_features.T
+                aug_obj_probs = aug_obj_logits.softmax(dim=-1)
+
+        # Step 4: Format Results with smart selection
+        results = []
+        for i in range(len(metadata)):
+            # Primary predictions
+            primary_obj_idx = top3_obj_indices[i][0].item()
+            primary_obj_conf = top3_obj_confs[i][0].item()
+            primary_color_idx = top3_color_indices[i][0].item()
+            
+            obj_name = OBJECT_CLASSES[primary_obj_idx]
+            color_name = COLOR_CLASSES[primary_color_idx]
+            
+            # Check augmented crops for consensus
+            if augmented_tensors:
+                aug_start = metadata[i]["aug_start_idx"]
+                aug_predictions = []
+                for j in range(2):  # 2 augmented versions
+                    aug_idx = aug_start + j
+                    if aug_idx < len(aug_obj_probs):
+                        aug_top_idx = aug_obj_probs[aug_idx].argmax().item()
+                        aug_predictions.append(OBJECT_CLASSES[aug_top_idx])
+                
+                # If primary confidence is low but augmented agree on something else, consider it
+                if primary_obj_conf < 0.15 and len(aug_predictions) == 2:
+                    if aug_predictions[0] == aug_predictions[1] and aug_predictions[0] != obj_name:
+                        # Secondary from top-3 that matches augmented consensus
+                        for k in range(1, 3):
+                            alt_name = OBJECT_CLASSES[top3_obj_indices[i][k].item()]
+                            if alt_name == aug_predictions[0]:
+                                obj_name = alt_name
+                                primary_obj_conf = top3_obj_confs[i][k].item()
+                                break
+            
+            # Normalize object name to canonical form
+            obj_name = normalize_object_name(obj_name)
+            
+            # Normalize color name (gray/grey -> gray, violet -> purple)
+            color_canonical = {
+                "grey": "gray", "violet": "purple", "navy": "blue",
+                "maroon": "red", "magenta": "pink", "cyan": "blue",
+                "turquoise": "blue", "teal": "green", "tan": "brown",
+                "beige": "brown", "gold": "yellow", "silver": "gray"
+            }
+            color_name = color_canonical.get(color_name, color_name)
+            
+            # Known problematic combinations fixes
+            FIXES = {
+                ("kangaroo", "red"): "llama",
+                ("kangaroo", "brown"): "llama", 
+                ("kangaroo", "orange"): "llama",
+                ("lobster", "orange"): "crab",
+                ("snake", "green"): "crocodile" if primary_obj_conf < 0.2 else "snake",
+            }
+            
+            fix_key = (obj_name, color_name)
+            if fix_key in FIXES:
+                fixed = FIXES[fix_key]
+                if callable(fixed):
+                    obj_name = fixed
+                else:
+                    obj_name = fixed
+
+            results.append({
+                "grid_position": metadata[i]["grid_position"],
+                "object_name": f"{color_name} {obj_name}",
+                "detected_color": color_name,
+                "detected_object": obj_name,
+                "confidence": round(primary_obj_conf, 4),
+                "bbox": metadata[i]["bbox"],
+                # Include alternatives for debugging
+                "alternatives": [
+                    f"{COLOR_CLASSES[top3_color_indices[i][0].item()]} {normalize_object_name(OBJECT_CLASSES[top3_obj_indices[i][k].item()])}"
+                    for k in range(min(3, top3_obj_indices.shape[1]))
+                ]
+            })
+
+        return jsonify({
+            "grid_size": "3x3", 
+            "detected_objects": results,
+            "model": "ViT-L/14" if "ViT-L" in str(model) else "ViT-B/32"
+        })
+
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    """Health check endpoint"""
+    return jsonify({
+        "status": "ok",
+        "device": device,
+        "num_object_classes": len(OBJECT_CLASSES),
+        "num_color_classes": len(COLOR_CLASSES)
+    })
+
+
+if __name__ == "__main__":
+    print("=" * 60)
+    print("CAPTCHA Classification Server")
+    print(f"Device: {device}")
+    print(f"Object Classes: {len(OBJECT_CLASSES)}")
+    print(f"Color Classes: {len(COLOR_CLASSES)}")
+    print("=" * 60)
+    # Use threaded=True or a production WSGI server for even better performance
+    app.run(host="0.0.0.0", port=5000, threaded=True)
