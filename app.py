@@ -129,6 +129,14 @@ def classify():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/", methods=["GET"])
+def welcome():
+    return jsonify({
+        "status": "online",
+        "message": "Welcome to the AI API Server",
+        "version": "1.0.0"
+    })
+
 if __name__ == "__main__":
     # Use threaded=True or a production WSGI server for even better performance
     app.run(host="0.0.0.0", port=5000, threaded=True)
