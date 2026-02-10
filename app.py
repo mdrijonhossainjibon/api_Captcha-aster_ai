@@ -24,7 +24,7 @@ OBJECT_CLASSES = [
     
     # --- ANIMALS (Birds/Reptiles/Insects) ---
     "bird", "owl", "duck", "chicken", "chick", "penguin", "parrot", "eagle", "swan", "flamingo",
-    "snake", "turtle", "crocodile", "frog", "dinosaur", "dragon" , "butterfly", "spider", 
+    "snake", "turtle", "crocodile", "frog", "butterfly", "spider", 
     "ladybug", "ant", "snail", "fish", "shark", "whale", "dolphin", "octopus", "crab",
     
     # --- PEOPLE & FANTASY ---
@@ -32,8 +32,8 @@ OBJECT_CLASSES = [
     "superhero", "wizard", "fairy", "clown", "astronaut",
     
     # --- TRANSPORT & VEHICLES ---
-    "car", "truck", "bus", "train", "airplane", "helicopter", "rocket", "boat", "ship", "submarine",
-    "bicycle", "motorcycle", "scooter", "tractor", "ambulance", "fire truck", "police car",
+    "car", "truck", "bus", "train", "airplane", "helicopter", "boat", "ship", "submarine",
+    "bicycle", "motorcycle", "scooter", "tractor", "ambulance", "truck", ,
     
     # --- TOYS & HOUSEHOLD ---
     "toy", "doll", "teddy bear", "ball", "balloon", "kite", "piano", "guitar", "drum", "book", 
