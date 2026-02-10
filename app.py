@@ -33,7 +33,7 @@ OBJECT_CLASSES = [
     
     # --- TRANSPORT & VEHICLES ---
     "car", "truck", "bus", "train", "airplane", "helicopter", "boat", "ship", "submarine",
-    "bicycle", "motorcycle", "scooter", "tractor", "ambulance", "truck", ,
+    "bicycle", "motorcycle", "scooter", "tractor", "ambulance", "truck", 
     
     # --- TOYS & HOUSEHOLD ---
     "toy", "doll", "teddy bear", "ball", "balloon", "kite", "piano", "guitar", "drum", "book", 
