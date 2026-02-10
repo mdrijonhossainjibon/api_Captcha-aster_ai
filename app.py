@@ -52,12 +52,40 @@ COLOR_CLASSES = [
  
 ]
 
-# 2. PRE-COMPUTE TEXT FEATURES (Runs once when server starts)
+# 2. ENHANCED PRE-COMPUTATION (Using ensembles for better accuracy)
+OBJECT_PROMPTS = [
+    "a cartoon {obj}",
+    "a cute cartoon {obj}",
+    "a simple illustration of a {obj}",
+    "a {obj} icon",
+    "clipart of a {obj}"
+]
+
+def get_descriptive_label(c):
+    # Help the model distinguish between similar animals
+    if c == "donkey":
+        return "donkey with long ears"
+    if c == "llama":
+        return "llama with long neck"
+    if c == "horse":
+        return "horse pony"
+    return c
+
 with torch.no_grad():
-    obj_tokens = clip.tokenize([f"a cartoon {c}" for c in OBJECT_CLASSES]).to(device)
-    obj_text_features = model.encode_text(obj_tokens)
+    # Object features with ensemble averaging
+    all_obj_features = []
+    for prompt_template in OBJECT_PROMPTS:
+        prompts = [prompt_template.format(obj=get_descriptive_label(c)) for c in OBJECT_CLASSES]
+        tokens = clip.tokenize(prompts, truncate=True).to(device)
+        features = model.encode_text(tokens)
+        features /= features.norm(dim=-1, keepdim=True)
+        all_obj_features.append(features)
+    
+    # Average the features from all prompts for a more robust "concept"
+    obj_text_features = torch.stack(all_obj_features).mean(dim=0)
     obj_text_features /= obj_text_features.norm(dim=-1, keepdim=True)
 
+    # Color features
     color_tokens = clip.tokenize([f"a {c} colored object" for c in COLOR_CLASSES]).to(device)
     color_text_features = model.encode_text(color_tokens)
     color_text_features /= color_text_features.norm(dim=-1, keepdim=True)
