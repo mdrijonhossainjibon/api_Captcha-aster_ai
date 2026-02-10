@@ -162,7 +162,7 @@ def welcome():
     return jsonify({
         "status": "online",
         "message": "Welcome to the AI API Server",
-        "version": "1.0.0"
+        "version": "2.0.0"
     })
 
 if __name__ == "__main__":
