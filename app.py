@@ -11,7 +11,7 @@ CORS(app)
 
 # Setup Device
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model, preprocess = clip.load("ViT-L/16", device=device)
+model, preprocess = clip.load("ViT-B/16", device=device)
 model.eval()
 
 # 1. Cleaned Object List (Removed duplicates and added missing items)
