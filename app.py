@@ -18,7 +18,7 @@ model.eval()
 OBJECT_CLASSES = [
     # --- ANIMALS (Mammals) ---
     "cow", "lion", "tiger", "zebra", "elephant", "giraffe", "monkey", "gorilla", "panda", "bear", 
-    "polar bear", "koala", "kangaroo", "llama", "hippo", "rhino", "camel", "deer", "fox", "wolf", 
+    "polar bear", "koala", "kangaroo", "llama",  "rhino", "camel", "deer", "fox", "wolf", 
     "dog", "cat", "rabbit", "hamster", "mouse", "rat", "pig", "sheep", "goat", "horse", "donkey", "hedgehog", "goose",
     "hippopotamus", "squirrel",
     
