@@ -42,7 +42,7 @@ OBJECT_CLASSES = [
     
     # --- NATURE & FOOD ---
     "tree", "flower", "grass", "mushroom", "sun", "moon", "star", "cloud", "rainbow", "mountain", 
-    "house",  "bridge", "apple", "banana", "orange", "strawberry", "cake", "ice cream", 
+    "house",  "bridge", "apple", "banana", "orange", "strawberry", "cake", "ice cream", "turkey",
     "pizza", "burger", "carrot", "corn"
 ]
 
